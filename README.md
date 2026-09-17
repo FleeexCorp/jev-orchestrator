@@ -60,9 +60,11 @@ its attention on design, review and integration.
   `claude_direct`) and returns the full distribution plus a confidence.
 - Answers yes/no with a probability (is this task trivial? is this failure
   repetitive? did the worker stay in scope?).
-- Picks the worker and model for each subtask from a catalog: every Codex model
-  your account exposes (read from the Codex CLI's local model cache), the Claude
-  subagent aliases `haiku` / `sonnet` / `opus`, and anything you add in config.
+- Says what capability each subtask needs (fast, balanced, strong) and whether it
+  needs judgment rather than execution. Code maps that to a concrete worker:
+  every Codex model your account exposes (read from the Codex CLI's local model
+  cache), the Claude subagent aliases `haiku` / `sonnet` / `opus`, and anything
+  you add in config.
 - Does it in one HTTP round trip per decision, with several independent
   questions per call.
 

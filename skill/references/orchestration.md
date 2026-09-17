@@ -84,7 +84,7 @@ worker summary. Put that into the state as `workerResult`, `changedFiles`,
 
 | Situation | Command | Options returned |
 |---|---|---|
-| Which model per subtask | `jev decide worker` | one catalog id per subtask + dispatch line |
+| Which worker per subtask | `jev decide worker` | capability plus adapter, resolved to a model, with its dispatch line |
 | Worker finished | `jev decide review` | accept, review_with_claude, retry, reject |
 | Worker failed | `jev decide retry` | continue, review, retry_same_worker, spawn_debug_worker, replan, finish |
 | No progress | `jev decide stuck` | continue, spawn_debug_worker, replan, finish |

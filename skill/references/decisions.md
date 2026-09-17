@@ -62,20 +62,27 @@ false` disables multi-worker.
 
 ### worker
 
-Needs `task` or `subtasks`. For each one, a Choice over the worker catalog
-(Codex models discovered in `$CODEX_HOME/models_cache.json`, Claude subagent
-aliases `haiku` / `sonnet` / `opus`, plus `workers.catalog` entries from config)
-and a Score of difficulty (mechanical, routine, tricky, reasoning-heavy).
+Needs `task` or `subtasks`. Three narrow questions per subtask, one call:
 
-Returns `assignments[]` with `candidateId`, `candidate.adapter` (`codex` or
-`claude_subagent`), `candidate.model`, `difficulty`, and a ready-to-use
-`dispatch` line (`codex run --model ... --reasoning ...` or "Agent tool with
-model").
+- Choice `capability`: `fast`, `balanced` or `strong`, described by what the
+  work demands, never by model name.
+- Noul `judgment`: does the task need trade-offs resolved, or only execution?
+- Score `difficulty`: mechanical, routine, tricky, reasoning-heavy.
 
-Policy: `irreversible` subtasks are only offered Claude candidates; a task scored
-tricky or harder never goes to a fast-tier model (upgraded, noted); Codex
-candidates disappear when Codex is unavailable. `jev-orchestrator workers list`
-shows exactly what Jev can choose from.
+Code maps the pair (capability, adapter) back to a concrete model from the
+catalog: Codex models discovered in `$CODEX_HOME/models_cache.json`, Claude
+subagent aliases `haiku` / `sonnet` / `opus`, plus `workers.catalog` from config.
+
+Asking for a model name directly does not work: vendor blurbs ("balanced agentic
+coding model") are indistinguishable, and the distribution comes back flat. On
+one real task, choosing among seven models gave confidence 0.22 to 0.26; asking
+for a capability instead gave 0.90, 0.98 and 0.59 on the same subtasks.
+
+Returns `assignments[]` with `capability`, `adapter`, `candidateId`,
+`candidate.model`, `needsJudgment`, `difficulty`, and a ready-to-use `dispatch`
+line. Policy: irreversible subtasks never go to Codex; a firm `judgment` yes
+sends the work to a Claude subagent; a task scored tricky or harder never runs
+on a fast worker. `jev-orchestrator workers list` shows the catalog.
 
 ### retry
 

@@ -10,6 +10,7 @@ import {
   tierFromDescription,
   type WorkerCandidate,
 } from "../../src/workers/catalog.js";
+import { capabilitiesFrom, resolveCandidate, strongerCapability } from "../../src/workers/roles.js";
 
 const FIXTURE = join(process.cwd(), "tests", "fixtures", "codex-home", "models_cache.json");
 const thresholds = { autonomous: 0.85, fallback: 0.6 };
@@ -75,6 +76,70 @@ describe("worker catalog", () => {
   });
 });
 
+describe("capability options", () => {
+  const candidates: WorkerCandidate[] = [
+    {
+      id: "codex:pinned",
+      adapter: "codex",
+      model: "gpt-pinned",
+      description: "pinned",
+      tier: "balanced",
+      source: "config",
+    },
+    {
+      id: "codex:other",
+      adapter: "codex",
+      model: "gpt-other",
+      description: "other",
+      tier: "balanced",
+      source: "codex_cache",
+    },
+    {
+      id: "codex:quick",
+      adapter: "codex",
+      model: "gpt-quick",
+      description: "quick",
+      tier: "fast",
+      source: "codex_cache",
+    },
+    ...CLAUDE_BUILTIN,
+  ];
+
+  it("offers one option per capability, weakest first, with no model names", () => {
+    const options = capabilitiesFrom(candidates);
+    expect(options.map((o) => o.tier)).toEqual(["fast", "balanced", "strong"]);
+    for (const o of options) {
+      for (const c of candidates) {
+        expect(o.description).not.toContain(c.model);
+      }
+    }
+    expect(options[0]?.description).toMatch(/mechanical and fully specified/);
+  });
+
+  it("resolves a capability to the preferred adapter, catalog order winning inside it", () => {
+    const options = capabilitiesFrom(candidates);
+    const balanced = options.find((o) => o.tier === "balanced");
+    if (!balanced) {
+      throw new Error("missing capability");
+    }
+    expect(resolveCandidate(balanced, "codex").model).toBe("gpt-pinned");
+    expect(resolveCandidate(balanced, "claude_subagent").model).toBe("sonnet");
+    const claudeOnly = capabilitiesFrom(CLAUDE_BUILTIN);
+    const fast = claudeOnly.find((o) => o.tier === "fast");
+    if (!fast) {
+      throw new Error("missing capability");
+    }
+    // Falls back when the preferred adapter has nothing at that capability.
+    expect(resolveCandidate(fast, "codex").model).toBe("haiku");
+  });
+
+  it("finds the next capability up, or nothing at the top", () => {
+    const options = capabilitiesFrom(candidates);
+    expect(strongerCapability("fast", options)?.tier).toBe("strong");
+    expect(strongerCapability("strong", options)).toBeUndefined();
+  });
+});
+
 describe("decideWorkerAssignment", () => {
   const catalog: WorkerCandidate[] = [
     ...CLAUDE_BUILTIN,
@@ -87,13 +152,21 @@ describe("decideWorkerAssignment", () => {
       source: "config",
     },
     {
+      id: "codex:balanced",
+      adapter: "codex",
+      model: "std-model",
+      description: "std",
+      tier: "balanced",
+      source: "config",
+      reasoningEffort: "high",
+    },
+    {
       id: "codex:strong",
       adapter: "codex",
       model: "strong-model",
       description: "strong",
       tier: "strong",
       source: "config",
-      reasoningEffort: "high",
     },
   ];
   const state = {
@@ -104,49 +177,95 @@ describe("decideWorkerAssignment", () => {
     ],
   };
 
-  it("assigns one candidate per subtask with a dispatch hint", async () => {
+  it("asks capability without naming models, and resolves the pair to one candidate", async () => {
     const engine = new MockDecisionEngine({
-      worker_backend: "codex:strong",
+      capability_backend: "balanced",
+      judgment_backend: 0.05,
       difficulty_backend: 1,
-      worker_deploy: "claude:opus",
-      difficulty_deploy: 3,
+      capability_deploy: "balanced",
+      judgment_deploy: 0.05,
+      difficulty_deploy: 1,
     });
     const d = await decideWorkerAssignment({ engine, thresholds }, state, catalog);
-    expect(d.assignments.map((a) => a.candidateId)).toEqual(["codex:strong", "claude:opus"]);
-    expect(d.assignments[0]?.dispatch).toContain("codex run --model strong-model --reasoning high");
-    expect(d.assignments[1]?.dispatch).toContain('model: "opus"');
-    // Irreversible subtask never sees Codex options.
-    const deployQuestion = engine.requests[0]?.questions.worker_deploy;
-    expect(deployQuestion?.type === "choice" && Object.keys(deployQuestion.criteria)).toEqual([
-      "claude:haiku",
-      "claude:sonnet",
-      "claude:opus",
+    expect(d.capabilities).toEqual(["fast", "balanced", "strong"]);
+    const question = engine.requests[0]?.questions.capability_backend;
+    expect(question?.type === "choice" && Object.keys(question.criteria)).toEqual([
+      "fast",
+      "balanced",
+      "strong",
     ]);
+    expect(d.assignments[0]).toMatchObject({
+      capability: "balanced",
+      adapter: "codex",
+      candidateId: "codex:balanced",
+    });
+    expect(d.assignments[0]?.dispatch).toContain("codex run --model std-model --reasoning high");
+    // Irreversible: same capability, Claude instead of Codex.
+    expect(d.assignments[1]).toMatchObject({
+      capability: "balanced",
+      adapter: "claude_subagent",
+      candidateId: "claude:sonnet",
+    });
+    expect(d.assignments[1]?.dispatch).toContain('model: "sonnet"');
     expect(d.assignments[1]?.policyNotes[0]).toMatch(/irreversible/);
   });
 
-  it("upgrades a fast-tier pick when the task is judged tricky", async () => {
-    const engine = new MockDecisionEngine({ worker_backend: "codex:fast", difficulty_backend: 3 });
+  it("sends judgment work to a Claude subagent only when the signal is firm", async () => {
+    const firm = new MockDecisionEngine({
+      capability_backend: "balanced",
+      judgment_backend: 0.95,
+      difficulty_backend: 1,
+    });
+    const one = { userGoal: "x", subtasks: [state.subtasks[0]] } as typeof state;
+    const d1 = await decideWorkerAssignment({ engine: firm, thresholds }, one, catalog);
+    expect(d1.assignments[0]?.adapter).toBe("claude_subagent");
+    expect(d1.assignments[0]?.policyNotes[0]).toMatch(/needs judgment/);
+
+    const unsure = new MockDecisionEngine({
+      capability_backend: "balanced",
+      judgment_backend: 0.65,
+      difficulty_backend: 1,
+    });
+    const d2 = await decideWorkerAssignment({ engine: unsure, thresholds }, one, catalog);
+    expect(d2.assignments[0]?.needsJudgment).toMatchObject({ yes: true, tier: "fallback" });
+    expect(d2.assignments[0]?.adapter).toBe("codex");
+  });
+
+  it("upgrades a fast pick when the task is judged tricky", async () => {
+    const engine = new MockDecisionEngine({
+      capability_backend: "fast",
+      judgment_backend: 0.05,
+      difficulty_backend: 3,
+    });
     const d = await decideWorkerAssignment(
       { engine, thresholds },
       { userGoal: "x", task: { id: "backend", title: "t" } },
       catalog,
     );
-    expect(d.assignments[0]?.candidateId).toBe("codex:strong");
-    expect(d.assignments[0]?.policyNotes[0]).toMatch(/too high for a fast-tier/);
+    expect(d.assignments[0]).toMatchObject({
+      capability: "strong",
+      candidateId: "codex:strong",
+      confidence: 1,
+    });
+    expect(d.assignments[0]?.policyNotes[0]).toMatch(/too high for a fast worker/);
   });
 
-  it("offers only Claude when Codex is unavailable and fails without candidates", async () => {
+  it("falls back to Claude when Codex is unavailable, and fails without candidates", async () => {
     const engine = new MockDecisionEngine({
-      worker_backend: "claude:sonnet",
+      capability_backend: "balanced",
+      judgment_backend: 0.05,
       difficulty_backend: 1,
     });
     const d = await decideWorkerAssignment(
       { engine, thresholds },
-      { userGoal: state.userGoal, subtasks: state.subtasks.slice(0, 1), codexAvailable: false },
+      { userGoal: "x", subtasks: [state.subtasks[0]], codexAvailable: false } as typeof state,
       catalog,
     );
-    expect(d.assignments[0]?.candidateId).toBe("claude:sonnet");
+    expect(d.assignments[0]).toMatchObject({
+      adapter: "claude_subagent",
+      candidateId: "claude:sonnet",
+    });
+    expect(d.assignments[0]?.policyNotes[0]).toMatch(/Codex unavailable/);
     await expect(decideWorkerAssignment({ engine, thresholds }, state, [])).rejects.toThrow(
       /No worker candidates/,
     );

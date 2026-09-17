@@ -2,11 +2,19 @@ import {
   type ChoiceAnswer,
   choice,
   type DecisionSchema,
+  type NoulAnswer,
+  noul,
   type ScoreAnswer,
   score,
 } from "../jev/types.js";
-import type { WorkerCandidate } from "../workers/catalog.js";
-import { ask, type DecisionContext } from "./decision.js";
+import type { WorkerAdapterId, WorkerCandidate, WorkerTier } from "../workers/catalog.js";
+import {
+  type CapabilityOption,
+  capabilitiesFrom,
+  resolveCandidate,
+  strongerCapability,
+} from "../workers/roles.js";
+import { ask, type DecisionContext, firmYes, type Signal, signal } from "./decision.js";
 import { compact, type OrchestrationState, type Subtask } from "./state.js";
 import { type ConfidenceTier, classify } from "./thresholds.js";
 
@@ -19,17 +27,22 @@ export const DIFFICULTY_LEVELS = [
 ] as const;
 
 const DIFFICULTY_TRICKY = 2;
-const DIFFICULTY_FAST_CEILING = 1.5;
 
 export interface WorkerAssignment {
   taskId: string;
   title: string;
-  /** Catalog id chosen after policy. */
+  /** Capability Jev asked for. */
+  capability: WorkerTier;
+  adapter: WorkerAdapterId;
+  /** Catalog entry the pair resolves to, after policy. */
   candidateId: string;
   candidate: WorkerCandidate;
+  /** Confidence of the capability choice. */
   confidence: number;
   tier: ConfidenceTier;
   probabilities: Record<string, number>;
+  /** Yes means the task needs judgment, so a Claude subagent rather than a coding worker. */
+  needsJudgment: Signal;
   /** 0..3 across DIFFICULTY_LEVELS; can land between levels. */
   difficulty: number;
   difficultyConfidence: number;
@@ -41,7 +54,8 @@ export interface WorkerAssignment {
 export interface WorkerDecision {
   kind: "worker";
   assignments: WorkerAssignment[];
-  candidates: string[];
+  /** Capabilities offered to Jev, weakest first. */
+  capabilities: WorkerTier[];
   model: string;
   latencyMs: number;
 }
@@ -54,36 +68,19 @@ function dispatchHint(c: WorkerCandidate): string {
   return `Agent tool with model: "${c.model}" (Claude subagent)`;
 }
 
-function eligible(
-  candidates: WorkerCandidate[],
-  task: Pick<Subtask, "irreversible">,
-  codexAvailable: boolean,
-): WorkerCandidate[] {
-  return candidates.filter((c) => {
-    if (c.adapter === "codex" && (!codexAvailable || task.irreversible)) {
-      return false;
-    }
-    return true;
-  });
-}
-
-/** Strongest non-fast candidate, preferring the same adapter as the model's pick. */
-function upgrade(from: WorkerCandidate, pool: WorkerCandidate[]): WorkerCandidate | undefined {
-  const rank = { fast: 0, balanced: 1, strong: 2 } as const;
-  const better = pool.filter((c) => rank[c.tier] > rank[from.tier]);
-  better.sort(
-    (a, b) =>
-      rank[b.tier] - rank[a.tier] ||
-      Number(b.adapter === from.adapter) - Number(a.adapter === from.adapter),
-  );
-  return better[0];
+/** Codex is out for irreversible tasks and when it is unavailable. */
+function codexAllowed(task: Pick<Subtask, "irreversible">, codexAvailable: boolean): boolean {
+  return codexAvailable && task.irreversible !== true;
 }
 
 /**
- * Which worker and model should take each (sub)task? One choice over the
- * catalog per task plus a difficulty score, all in one Jev call. Policy:
- * irreversible tasks never go to Codex; a tricky task never goes to a
- * fast-tier model; Claude-only when Codex is unavailable.
+ * Which worker should take each (sub)task? Three narrow questions per task in
+ * one call: the capability needed (one option per tier, never a model name),
+ * whether the task needs judgment rather than execution, and how difficult it
+ * is. Code maps capability plus adapter back to a concrete model.
+ *
+ * Policy: irreversible tasks never go to Codex; a task scored tricky or harder
+ * never runs on a fast-tier worker.
  */
 export async function decideWorkerAssignment(
   ctx: DecisionContext,
@@ -95,26 +92,30 @@ export async function decideWorkerAssignment(
   if (tasks.length === 0) {
     throw new Error("Worker assignment needs `task` or `subtasks` in the state.");
   }
-  if (catalog.length === 0) {
+  const codexAvailable = state.codexAvailable ?? true;
+  const pool = catalog.filter((c) => c.adapter !== "codex" || codexAvailable);
+  const options = capabilitiesFrom(pool);
+  if (options.length === 0) {
     throw new Error("No worker candidates available; check `workers` in config and Codex status.");
   }
-  const codexAvailable = state.codexAvailable ?? true;
+
+  const criteria: Record<string, string> = {};
+  for (const o of options) {
+    criteria[o.tier] = o.description;
+  }
 
   const questions: DecisionSchema = {};
-  const pools = new Map<string, WorkerCandidate[]>();
   for (const task of tasks) {
-    const pool = eligible(catalog, task, codexAvailable);
-    if (pool.length === 0) {
-      throw new Error(`No eligible worker for subtask ${task.id}.`);
-    }
-    pools.set(task.id, pool);
-    const criteria: Record<string, string> = {};
-    for (const c of pool) {
-      criteria[c.id] = `${c.description} (tier: ${c.tier})`;
-    }
-    questions[`worker_${task.id}`] = choice(
-      `Which worker should implement subtask \`subtasks[id=${task.id}]\`? Match model capability to what the task needs; prefer the cheapest option that is likely to succeed without rework.`,
+    questions[`capability_${task.id}`] = choice(
+      `What capability does a worker need to complete subtask \`subtasks[id=${task.id}]\` correctly without rework? Pick the cheapest one that suffices.`,
       criteria,
+    );
+    questions[`judgment_${task.id}`] = noul(
+      `Does subtask \`subtasks[id=${task.id}]\` require weighing trade-offs or resolving something the specification leaves open, rather than executing a specification that is already settled?`,
+      {
+        true: "The worker would have to make a call the task does not answer: an interface, a product choice, or how to reconcile two components.",
+        false: "What to build is settled; the work is to implement and verify it.",
+      },
     );
     questions[`difficulty_${task.id}`] = score(
       `How difficult is subtask \`subtasks[id=${task.id}]\` for an autonomous coding agent?`,
@@ -127,57 +128,83 @@ export async function decideWorkerAssignment(
     currentPlan: state.currentPlan,
     repositorySummary: state.repositorySummary,
     subtasks: tasks.map((t) => compact({ ...t })),
-    codexAvailable,
   });
   const result = await ask(ctx, "worker_assignment", projected, questions);
-  const answers = result.answers as Record<string, ChoiceAnswer | ScoreAnswer>;
+  const answers = result.answers as Record<string, ChoiceAnswer | NoulAnswer | ScoreAnswer>;
 
-  const assignments: WorkerAssignment[] = tasks.map((task) => {
-    const pick = answers[`worker_${task.id}`];
-    const diff = answers[`difficulty_${task.id}`];
-    if (pick?.type !== "choice" || diff?.type !== "score") {
-      throw new Error(`Jev response missing worker answers for subtask ${task.id}.`);
-    }
-    const pool = pools.get(task.id) ?? [];
-    const notes: string[] = [];
-    let candidate = pool.find((c) => c.id === pick.choice);
-    if (!candidate) {
-      throw new Error(`Jev chose unknown worker "${pick.choice}".`);
-    }
-    if (task.irreversible) {
-      notes.push("Task is irreversible; Codex workers were not offered.");
-    }
-    if (diff.score >= DIFFICULTY_TRICKY && candidate.tier === "fast") {
-      const better = upgrade(candidate, pool);
-      if (better) {
-        notes.push(
-          `Difficulty ${diff.score.toFixed(1)} is too high for a fast-tier model; upgraded ${candidate.id} to ${better.id}.`,
-        );
-        candidate = better;
-      }
-    } else if (diff.score <= DIFFICULTY_FAST_CEILING && candidate.tier === "strong") {
-      notes.push("Task looks easy for a strong-tier model; a cheaper candidate would likely do.");
-    }
-    return {
-      taskId: task.id,
-      title: task.title,
-      candidateId: candidate.id,
-      candidate,
-      confidence: notes.some((n) => n.startsWith("Difficulty")) ? 1 : pick.confidence,
-      tier: classify(pick.confidence, ctx.thresholds),
-      probabilities: pick.probabilities,
-      difficulty: diff.score,
-      difficultyConfidence: diff.confidence,
-      policyNotes: notes,
-      dispatch: dispatchHint(candidate),
-    };
-  });
+  const assignments = tasks.map((task) =>
+    assign(task, answers, options, ctx, codexAllowed(task, codexAvailable), codexAvailable),
+  );
 
   return {
     kind: "worker",
     assignments,
-    candidates: catalog.map((c) => c.id),
+    capabilities: options.map((o) => o.tier),
     model: result.model,
     latencyMs: result.latencyMs,
+  };
+}
+
+function assign(
+  task: Subtask,
+  answers: Record<string, ChoiceAnswer | NoulAnswer | ScoreAnswer>,
+  options: CapabilityOption[],
+  ctx: DecisionContext,
+  allowCodex: boolean,
+  codexAvailable: boolean,
+): WorkerAssignment {
+  const pick = answers[`capability_${task.id}`];
+  const judgment = answers[`judgment_${task.id}`];
+  const diff = answers[`difficulty_${task.id}`];
+  if (pick?.type !== "choice" || judgment?.type !== "noul" || diff?.type !== "score") {
+    throw new Error(`Jev response missing worker answers for subtask ${task.id}.`);
+  }
+  let option = options.find((o) => o.tier === pick.choice);
+  if (!option) {
+    throw new Error(`Jev chose unknown capability "${pick.choice}".`);
+  }
+
+  const notes: string[] = [];
+  let confidence = pick.confidence;
+  const needsJudgment = signal(judgment, ctx.thresholds);
+
+  if (diff.score >= DIFFICULTY_TRICKY && option.tier === "fast") {
+    const better = strongerCapability(option.tier, options);
+    if (better) {
+      notes.push(
+        `Difficulty ${diff.score.toFixed(1)} is too high for a fast worker; upgraded ${option.tier} to ${better.tier}.`,
+      );
+      option = better;
+      confidence = 1;
+    }
+  }
+
+  // Judgment work goes to a Claude subagent: it reasons before editing and shares Claude's context.
+  const wantsClaude = firmYes(needsJudgment) || !allowCodex;
+  const adapter: WorkerAdapterId = wantsClaude ? "claude_subagent" : "codex";
+  if (task.irreversible === true) {
+    notes.push("Task is irreversible; it stays with Claude rather than a Codex worker.");
+  } else if (!codexAvailable) {
+    notes.push("Codex unavailable; assigned to a Claude subagent.");
+  } else if (firmYes(needsJudgment)) {
+    notes.push("Task needs judgment rather than execution; assigned to a Claude subagent.");
+  }
+
+  const candidate = resolveCandidate(option, adapter);
+  return {
+    taskId: task.id,
+    title: task.title,
+    capability: option.tier,
+    adapter: candidate.adapter,
+    candidateId: candidate.id,
+    candidate,
+    confidence,
+    tier: classify(confidence, ctx.thresholds),
+    probabilities: pick.probabilities,
+    needsJudgment,
+    difficulty: diff.score,
+    difficultyConfidence: diff.confidence,
+    policyNotes: notes,
+    dispatch: dispatchHint(candidate),
   };
 }

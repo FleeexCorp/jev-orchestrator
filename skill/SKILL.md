@@ -53,10 +53,10 @@ external side effect. Your judgment and the user's permission rules govern those
 3. **Parallelize?** With two or more subtasks:
    `jev-orchestrator decide parallel --state-file <json>`
    The answer says which subtasks suit Codex and how many workers to run.
-   **Which model?** `jev-orchestrator decide worker --state-file <json>` picks,
-   per subtask, one of the available workers (Codex models found locally,
-   Claude subagent aliases haiku/sonnet/opus, config entries) and returns the
-   exact dispatch command. `jev-orchestrator workers list` shows the catalog.
+   **Which worker?** `jev-orchestrator decide worker --state-file <json>` asks,
+   per subtask, what capability it needs and whether it needs judgment, then
+   returns the exact dispatch command for a concrete model.
+   `jev-orchestrator workers list` shows the catalog.
 4. **Dispatch.** Mix freely: Codex workers, your own edits, native subagents.
    Write workers need isolation: `jev-orchestrator worktree create <name>` then
    `jev-orchestrator codex run --cwd <worktree> --task-file <prompt.md> --model <m>`.

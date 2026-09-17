@@ -137,7 +137,8 @@ export class Reporter {
     }
     for (const a of d.assignments) {
       if (this.verbose) {
-        this.jevBlock(`worker_${a.taskId}`, a.probabilities, a.candidateId);
+        this.jevBlock(`capability_${a.taskId}`, a.probabilities, a.capability);
+        this.signalBlock({ needs_judgment: a.needsJudgment });
         this.line(
           pc.dim(
             `     difficulty${" ".repeat(LABEL_WIDTH - "difficulty".length)}${a.difficulty.toFixed(1)}`,
@@ -145,7 +146,7 @@ export class Reporter {
         );
       }
       this.line(
-        `${pc.bold(a.taskId.padEnd(16))} ${a.candidateId.padEnd(24)} ${tierBadge(a.tier)} ${pc.dim(a.confidence.toFixed(2))}`,
+        `${pc.bold(a.taskId.padEnd(16))} ${`${a.capability} on ${a.adapter}`.padEnd(32)} ${tierBadge(a.tier)} ${pc.dim(a.confidence.toFixed(2))}`,
       );
       this.line(pc.dim(`  ${a.dispatch}`));
       for (const note of a.policyNotes) {
