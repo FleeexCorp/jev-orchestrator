@@ -7,6 +7,7 @@ import {
   installSkill,
   uninstallSkill,
 } from "../../src/skill/installer.js";
+import { PACKAGE_NAME, packageInfo } from "../../src/util/pkg.js";
 import { type FakeHome, makeFakeHome, removeTmpDir } from "../helpers/tmp.js";
 
 const sourceDir = join(process.cwd(), "skill");
@@ -122,7 +123,7 @@ describe("skill installer", () => {
   it("helper script quotes paths with spaces", () => {
     const script = helperScript("/Users/me/dev perso/x/dist/cli/index.js");
     expect(script).toContain('CLI="/Users/me/dev perso/x/dist/cli/index.js"');
-    expect(script).toContain("Rebuild the clone");
+    expect(script).toContain("Reinstall with");
   });
 
   it("keeps description plus when_to_use under the 1536 character cap", async () => {
@@ -135,5 +136,15 @@ describe("skill installer", () => {
     const combined = `${grab("description")} ${grab("when_to_use")}`;
     expect(combined.length).toBeGreaterThan(200);
     expect(combined.length).toBeLessThanOrEqual(1536);
+  });
+});
+
+describe("package identity", () => {
+  it("PACKAGE_NAME matches package.json, which is how the CLI finds its own root", async () => {
+    const pkg = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8"));
+    expect(PACKAGE_NAME).toBe(pkg.name);
+    expect(packageInfo().version).toBe(pkg.version);
+    // The bin name stays unscoped: it is the command users and the skill call.
+    expect(Object.keys(pkg.bin)).toEqual(["jev-orchestrator"]);
   });
 });

@@ -1,5 +1,7 @@
 # Changelog
 
+Published as `@fleeex/jev-orchestrator`.
+
 ## 0.1.0
 
 - Session log: every `decide` and `codex run` appends to `.jev/sessions/<session>.jsonl`; `report` summarizes decisions, tiers, policy overrides, tokens, estimated cost and worker runs.

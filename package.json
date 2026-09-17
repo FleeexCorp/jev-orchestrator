@@ -1,5 +1,5 @@
 {
-  "name": "jev-orchestrator",
+  "name": "@fleeex/jev-orchestrator",
   "version": "0.1.0",
   "description": "Claude Code skill: TypeSafe Jev as a fast decision layer for orchestrating Codex coding workers.",
   "license": "MIT",
@@ -25,6 +25,10 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -50,6 +54,10 @@
     "type": "git",
     "url": "https://github.com/FleeexCorp/jev-orchestrator"
   },
+  "bugs": {
+    "url": "https://github.com/FleeexCorp/jev-orchestrator/issues"
+  },
+  "homepage": "https://github.com/FleeexCorp/jev-orchestrator#readme",
   "dependencies": {
     "@clack/prompts": "^1.0.0",
     "@typesafe-ai/sdk": "^0.6.0",

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PACKAGE_NAME = "jev-orchestrator";
+export const PACKAGE_NAME = "@fleeex/jev-orchestrator";
 
 /** dist/cli/index.js -> dist/cli -> dist -> root is three levels; leave headroom for src/ layouts. */
 const MAX_PARENT_WALK = 6;

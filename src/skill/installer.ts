@@ -54,7 +54,7 @@ export function resolveSkillDir(
 }
 
 const REINSTALL_HINT =
-  "jev-orchestrator CLI not found at the recorded path. Rebuild the clone and run: install --scope <global|project>";
+  "jev-orchestrator CLI not found at the recorded path. Reinstall with: npx @fleeex/jev-orchestrator install --scope <global|project>";
 
 /**
  * POSIX shim that runs the exact CLI which installed the skill. It never
