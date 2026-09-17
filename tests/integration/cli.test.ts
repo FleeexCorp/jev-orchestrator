@@ -6,9 +6,11 @@ import { type FakeHome, initGitRepo, makeFakeHome, removeTmpDir } from "../helpe
 
 const CLI = join(process.cwd(), "dist", "cli", "index.js");
 
+// NO_COLOR keeps stdout free of ANSI codes: picocolors would colorize under CI=true.
 async function cli(args: string[], env: Record<string, string | undefined>, cwd?: string) {
-  const merged: NodeJS.ProcessEnv = { ...process.env, ...env };
+  const merged: NodeJS.ProcessEnv = { ...process.env, ...env, NO_COLOR: "1" };
   delete merged.TYPESAFE_API_KEY;
+  delete merged.FORCE_COLOR;
   return exec(process.execPath, [CLI, ...args], { env: merged, ...(cwd ? { cwd } : {}) });
 }
 
