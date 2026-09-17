@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"01a0aeb4-bb54-7ca2-84ac-7d2d2878c16d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’m creating the requested file now."}}
+{"type":"item.started","item":{"id":"item_1","type":"file_change","changes":[{"path":"/repo/hello.txt","kind":"add"}],"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"/repo/hello.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"pnpm test","exit_code":0}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":32469,"cached_input_tokens":26752,"cache_write_input_tokens":0,"output_tokens":71,"reasoning_output_tokens":11}}

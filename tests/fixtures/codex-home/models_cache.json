@@ -1,0 +1,41 @@
+{
+  "fetched_at": "2026-09-17T00:00:00Z",
+  "models": [
+    {
+      "slug": "gpt-reserve",
+      "display_name": "GPT-Reserve",
+      "description": "Fast and affordable agentic coding model.",
+      "visibility": "list",
+      "priority": 1
+    },
+    {
+      "slug": "gpt-5.6-sol",
+      "display_name": "GPT-5.6-Sol",
+      "description": "Reliable agentic workhorse for everyday tasks.",
+      "visibility": "list",
+      "priority": 4
+    },
+    {
+      "slug": "gpt-5.5",
+      "display_name": "GPT-5.5",
+      "description": "Proven previous-generation model for coding and general work.",
+      "visibility": "list",
+      "priority": 9
+    },
+    {
+      "slug": "codex-auto-review",
+      "display_name": "Codex Auto Review",
+      "description": "Automatic approval review model for Codex.",
+      "visibility": "list",
+      "priority": 50
+    },
+    {
+      "slug": "gpt-hidden",
+      "display_name": "Hidden",
+      "description": "Internal.",
+      "visibility": "hidden",
+      "priority": 2
+    },
+    { "display_name": "no slug" }
+  ]
+}

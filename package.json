@@ -1,0 +1,72 @@
+{
+  "name": "jev-orchestrator",
+  "version": "0.1.0",
+  "description": "Claude Code skill: TypeSafe Jev as a fast decision layer for orchestrating Codex coding workers.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "bin": {
+    "jev-orchestrator": "dist/cli/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skill",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "prepublishOnly": "pnpm check && pnpm build"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "skill",
+    "typesafe",
+    "jev",
+    "codex",
+    "orchestration",
+    "agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FleeexCorp/jev-orchestrator"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.0",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
