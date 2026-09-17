@@ -81,11 +81,22 @@ Jev is not a chat model and this project never uses it as one.
 
 ## Install
 
-Requirements: Node.js 20+, git, Claude Code. Codex CLI is optional.
+Requirements: Node.js 20+, git, pnpm, Claude Code. Codex CLI is optional.
+
+The package is not on npm yet, so install from source:
 
 ```bash
-npx jev-orchestrator setup
+git clone https://github.com/FleeexCorp/jev-orchestrator.git
+cd jev-orchestrator
+pnpm install
+pnpm build
+node dist/cli/index.js setup
 ```
+
+Keep the clone: the installed skill runs this build. If you move or delete it,
+the skill tells you to reinstall rather than fetching anything from the network.
+Once the package is published, `npx jev-orchestrator setup` will do all of the
+above in one step.
 
 ```
 Where should Jev Orchestrator be installed?
@@ -98,11 +109,15 @@ Setup then validates your TypeSafe key, checks Codex, installs the skill and
 writes `~/.config/jev-orchestrator/config.json`. Non-interactive variants:
 
 ```bash
-jev-orchestrator install --scope global
-jev-orchestrator install --scope project
-jev-orchestrator setup --yes --skip-codex
-jev-orchestrator uninstall --scope global
+node dist/cli/index.js install --scope global
+node dist/cli/index.js install --scope project
+node dist/cli/index.js setup --yes --skip-codex
+node dist/cli/index.js uninstall --scope global
 ```
+
+The examples below write `jev-orchestrator` for readability; until the package
+is published, that means `node <clone>/dist/cli/index.js`. The skill itself
+always calls its own helper script, so Claude needs no alias.
 
 Project installs contain no secrets. Commit `.claude/skills/jev-orchestrator`
 so teammates get the skill; they still need their own `TYPESAFE_API_KEY`.

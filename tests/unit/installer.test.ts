@@ -122,7 +122,7 @@ describe("skill installer", () => {
   it("helper script quotes paths with spaces", () => {
     const script = helperScript("/Users/me/dev perso/x/dist/cli/index.js");
     expect(script).toContain('CLI="/Users/me/dev perso/x/dist/cli/index.js"');
-    expect(script).toContain("Reinstall with");
+    expect(script).toContain("Rebuild the clone");
   });
 
   it("keeps description plus when_to_use under the 1536 character cap", async () => {
